@@ -1,6 +1,6 @@
 
 #Variables
-$Scriptver = "1.0"
+$Scriptver = "1.001"
 $LogPath = "C:\OSIS\LOGS\PingLog.txt"
 
 #Initialize Target List with CloudFlare DNS
@@ -30,7 +30,7 @@ function Write-Log {
         )
 
     try {
-        if (Test-Path $LogPath){
+        if (Test-Path (Split-Path $LogPath)){
             Out-File -FilePath $LogPath -Append -InputObject "$(Get-date) $InputObject" -ErrorAction $ErrAct
 
         } else {
