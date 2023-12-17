@@ -1,6 +1,6 @@
 
 #Variables
-$Scriptver = "0.9"
+$Scriptver = "1.0"
 $LogPath = "C:\OSIS\LOGS\PingLog.txt"
 
 #Initialize Target List with CloudFlare DNS
@@ -104,6 +104,7 @@ do { $response = Read-host "Enter IP or URL to add to target list"
 Write-Log "Final target list: $targets" -WriteHost
 
 Write-Log "Starting background jobs..." -WriteHost
+#//BUG When given an IP address, there is no allnameresolutionresults.ipaddress. Redo logs to make that clear, csv?
 Write-Log "Fields: Date, Target, Adapter Name, Source IP Address, Destination DNS result, Ping Status, TTL, RTT"
 
 #Create background jobs to run tests, one job per ping target
@@ -119,8 +120,6 @@ foreach ($target in $targets){
         do {
             #test connection to target
             $t = Test-NetConnection -Computername "$target"
-
-            #//BUG When given an IP address, there is no allnameresolutionresults.ipaddress. Redo logs to make that clear, csv?
 
             #Specify information from ping result to write in log
             #If multiple records are returned, filter for A (IPv4) records and use the first one
@@ -156,7 +155,6 @@ foreach ($target in $targets){
             }
 
             #Write results of ping
-            #Fields: Date, Target, Adapter Name, Source IP Address, Destination address, Destination DNS Result, Ping Status, TTL, RTT 
             Out-File -FilePath $Logpath -Append -InputObject "$(Get-date) $result"
             
             #sleep to avoid over-logging, failed resolutions can return several times a second
