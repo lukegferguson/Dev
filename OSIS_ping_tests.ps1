@@ -1,7 +1,8 @@
 
 #Variables
-$Scriptver = "1.001"
-$LogPath = "C:\OSIS\LOGS\PingLog.txt"
+$Scriptver = "1.5"
+$LogPath = "C:\OSIS\LOGS\PingScriptLog.txt"
+$ResultsPath = "C:\OSIS\LOGS\PingResults.csv"
 
 #Initialize Target List with CloudFlare DNS
 $Targets = @("1.1.1.1")
@@ -54,9 +55,33 @@ function Write-Log {
 }
 
 #Intro paragraph
-#Script will stop here if logs cannot be written, user can exit
+#Write-Log will stop script if log cannot be written or created
 Write-Log "######## OSIS Ping Test Version $ScriptVer ########" -WriteHost -Foregroundcolor "Blue"
-Write-Log "Log location $logpath" -WriteHost
+Write-Log "Script Log location $logpath" -WriteHost
+Write-Log "Verifying CSV for ping test results exists, location $ResultsPath" -WriteHost
+
+#Create CSV for results
+#Script stops here if CSV cannot be created
+    if(Test-Path $ResultsPath){
+        Write-Log "$ResultsPath already exists" -WriteHost
+    } else {
+        try {
+            New-Item -Path $ResultsPath -ItemType File -ErrorAction Stop | Out-Null
+            Write-Log "Successfully created CSV for ping test results" -WriteHost
+             $CSVHeader = "Date,Time (24 hour),Target,Ping Success,Ping Status,Network Adapter,Source IP Address,Destination IP Address,RTT"
+             Out-File -FilePath $ResultsPath -InputObject $CSVheader -Append -Encoding utf8
+
+            
+        } catch {
+            Write-Log "Unable to create CSV for ping test results at $ResultsPath" -WriteHost
+            Write-Log "System Error: $_" -Foregroundcolor red -WriteHost
+            do {
+                $EXIT = read-host -Prompt "EXIT to quit"
+            } until ($exit -eq "exit")
+            exit
+        }
+    }
+
 
 #Acquire and confirm addition of gateway IPs to target list
 Write-log "Getting local gateway IP" -WriteHost
@@ -86,10 +111,10 @@ Write-host "ADD TARGETS TO PING" -ForegroundColor Green
 Write-host "Already in target list CloudFlare DNS 1.1.1.1" -foregroundcolor DarkGreen
 Write-Host "Recommended additional targets include:" 
 Write-host "OSIS RDS connection brokers (internal resources) like    " -NoNewline 
-write-host "RDCB.osisonline.org" -ForegroundColor DarkRed 
+write-host "RDCB.osisonline.org" -ForegroundColor Red
 write-host "OSIS public internet facing RDS Gateways like    " -NoNewline
-write-host "RDGW.osisonline.org" -ForegroundColor DarkRed
-write-host "DONE to continue" -ForegroundColor Green
+write-host "RDGW.osisonline.org" -ForegroundColor Red
+write-host "Type DONE to continue" -ForegroundColor Green
 
 do { $response = Read-host "Enter IP or URL to add to target list"
     
@@ -104,8 +129,6 @@ do { $response = Read-host "Enter IP or URL to add to target list"
 Write-Log "Final target list: $targets" -WriteHost
 
 Write-Log "Starting background jobs..." -WriteHost
-#//BUG When given an IP address, there is no allnameresolutionresults.ipaddress. Redo logs to make that clear, csv?
-Write-Log "Fields: Date, Target, Adapter Name, Source IP Address, Destination DNS result, Ping Status, TTL, RTT"
 
 #Create background jobs to run tests, one job per ping target
 foreach ($target in $targets){
@@ -114,50 +137,20 @@ foreach ($target in $targets){
         
         #Import variables from parent scope
         $target = $using:target
-        $Logpath = $using:Logpath
+        $ResultsPath = $using:ResultsPath
 
         #Test-netconnection doesn't have the option to stay on like ping -t, so infinite DoWhile loop instead
         do {
             #test connection to target
-            $t = Test-NetConnection -Computername "$target"
+            $t = Test-NetConnection $target
 
             #Specify information from ping result to write in log
-            #If multiple records are returned, filter for A (IPv4) records and use the first one
-            if ($t.AllNameResolutionResults.name.count -gt 1){
-                $result = @(
-                    "Target-$target",
-                    $t.NetAdapter.Name,
-                    $t.sourceaddress.ipaddress,
-                    (($t.allnameresolutionresults | Where-Object -Property Type -eq "A")[0]).name,
-                    (($t.allnameresolutionresults | Where-Object -Property Type -eq "A")[0]).ipaddress,
-                    $t.pingreplydetails.status,
-                    (($t.DNSonlyrecords | Where-Object -Property Type -eq "A")[0]).ttl,
-                    $t.pingreplydetails.roundtriptime
-                )
-            } 
-            #No selection needed on single records
-            elseif ($t.allnameresolutionresults.name.count -eq 1){
-                $result = @(
-                    "Target-$target",
-                    $t.NetAdapter.Name,
-                    $t.sourceaddress.ipaddress,
-                    $t.allnameresolutionresults.name,
-                    $t.allnameresolutionresult.ipaddress,
-                    $t.pingreplydetails.status,
-                    $t.DNSonlyrecords.ttl,
-                    $t.pingreplydetails.roundtriptime
-                )
-            } else { 
-                $result = @(
-                "Target-$target",
-                "Ping Success: $($t.PingSucceeded)"
-                )
-            }
-
-            #Write results of ping
-            Out-File -FilePath $Logpath -Append -InputObject "$(Get-date) $result"
+            $result = "$(Get-Date -format "yyyy.MM.dd"),$(Get-Date -Format HH:mm:ss),$($target),$($t.PingSucceeded),$($t.PingReplyDetails.Status),$($t.NetAdapter.Name),$($t.sourceaddress.ipaddress),$($t.PingReplyDetails.Address.IPAddressToString),$($t.pingreplydetails.roundtriptime)"
             
-            #sleep to avoid over-logging, failed resolutions can return several times a second
+            #Write results of ping
+            Out-File -FilePath $ResultsPath -InputObject $result -Append -Encoding utf8
+            
+            #sleep to avoid over-logging, failed name resolutions can return several times a second
             start-sleep -Seconds 1
         
         } while (
